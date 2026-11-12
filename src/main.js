@@ -1,4 +1,3 @@
-
 import {
   registerAutomationAction,
   initializeAutomationManager,
@@ -13,8 +12,11 @@ import {
 
 import { createVRMRenderer } from "./renderer/vrm-renderer.js";
 import { attachAvatarControls } from "./renderer/avatar-controls.js";
+import { initializeChatUI } from "./core/chat-ui.js";
 
-// AUTOMATION
+// ======================================
+// AUTOMATION SYSTEM
+// ======================================
 
 registerAutomationAction(
   "show_reminder",
@@ -26,7 +28,9 @@ registerAutomationAction(
 initializeAutomationManager();
 startAutomationScheduler();
 
+// ======================================
 // AVATAR INITIALIZATION
+// ======================================
 
 const avatarContainer = document.getElementById("avatar-container");
 const fileInput = document.getElementById("file");
@@ -41,6 +45,7 @@ if (avatarContainer) {
   vrmRenderer = createVRMRenderer();
 
   vrmRenderer.init(avatarContainer);
+
   connectAvatarRenderer(vrmRenderer);
 
   avatarControls = attachAvatarControls({
@@ -50,7 +55,9 @@ if (avatarContainer) {
   });
 }
 
-// VRM UPLOAD
+// ======================================
+// VRM AVATAR UPLOAD
+// ======================================
 
 if (fileInput) {
   fileInput.addEventListener("change", async event => {
@@ -65,7 +72,9 @@ if (fileInput) {
     }
 
     if (file.size > 100 * 1024 * 1024) {
-      message.textContent = "VRM file is too large (maximum 100 MB).";
+      message.textContent =
+        "VRM file is too large (maximum 100 MB).";
+
       fileInput.value = "";
       return;
     }
@@ -88,7 +97,8 @@ if (fileInput) {
         placeholder.style.display = "none";
       }
 
-      message.textContent = "Ira's avatar loaded: " + file.name;
+      message.textContent =
+        "Ira's avatar loaded: " + file.name;
 
     } catch (error) {
       URL.revokeObjectURL(newURL);
@@ -103,8 +113,45 @@ if (fileInput) {
   });
 }
 
-// INITIAL STATUS
+// ======================================
+// CHAT INTERFACE
+// ======================================
 
-console.log("Ira automation and avatar systems initialized.");
-console.log("Avatar state:", getAvatarState());
-      
+let iraChat = null;
+
+try {
+  iraChat = initializeChatUI();
+
+  console.log("Ira chat interface initialized.");
+
+} catch (error) {
+  console.error("Chat initialization failed:", error);
+}
+
+// ======================================
+// SYSTEM STATUS
+// ======================================
+
+console.log("Ira automation initialized.");
+
+console.log(
+  "Avatar state:",
+  getAvatarState()
+);
+
+console.log("Ira main application initialized.");
+
+// ======================================
+// APP CLEANUP
+// ======================================
+
+window.addEventListener("beforeunload", () => {
+  avatarControls?.destroy();
+  iraChat?.destroy();
+
+  vrmRenderer?.dispose();
+
+  if (currentModelURL) {
+    URL.revokeObjectURL(currentModelURL);
+  }
+});
