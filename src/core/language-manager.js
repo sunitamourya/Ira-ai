@@ -1,41 +1,171 @@
+const LANGUAGES = {
+  en: {
+    id: "en",
+    name: "English",
+    nativeName: "English",
+    script: "Latin"
+  },
+  hi: {
+    id: "hi",
+    name: "Hindi",
+    nativeName: "हिन्दी",
+    script: "Devanagari"
+  },
+  hinglish: {
+    id: "hinglish",
+    name: "Hinglish",
+    nativeName: "Hinglish",
+    script: "Latin"
+  },
+  ur: {
+    id: "ur",
+    name: "Urdu",
+    nativeName: "اردو",
+    script: "Arabic"
+  },
+  gu: {
+    id: "gu",
+    name: "Gujarati",
+    nativeName: "ગુજરાતી",
+    script: "Gujarati"
+  }
+};
 
-export const IRA_LANGUAGES = [
-  { id: "en", name: "English" },
-  { id: "hi", name: "Hindi" },
-  { id: "hinglish", name: "Hinglish" },
-  { id: "ur", name: "Urdu" },
-  { id: "gu", name: "Gujarati" }
-];
+const LANGUAGE_INSTRUCTIONS = {
+  en: "Reply naturally in clear English.",
+  hi: "Reply naturally in Hindi using Devanagari script.",
+  hinglish: "Reply naturally in conversational Hinglish using Roman script.",
+  ur: "Reply naturally in Urdu. Prefer Urdu script unless the user uses Roman Urdu.",
+  gu: "Reply naturally in Gujarati using Gujarati script."
+};
 
-let currentLanguage = "en";
+let preferredLanguage = "auto";
+let responseLanguage = "auto";
+let lastDetectedLanguage = "en";
 
-export function getCurrentLanguage() {
-  return IRA_LANGUAGES.find(
-    language => language.id === currentLanguage
-  );
+const DEVANAGARI = /[\u0900-\u097F]/;
+const GUJARATI = /[\u0A80-\u0AFF]/;
+const ARABIC = /[\u0600-\u06FF]/;
+
+const HINDI_WORDS = new Set([
+  "hai", "hain", "ho", "ka", "ki", "ke",
+  "kya", "kyun", "kaise", "mera", "meri",
+  "tum", "aap", "mujhe", "nahi", "nahin",
+  "haan", "accha", "achha", "bahut",
+  "karna", "karo", "chahiye", "matlab",
+  "aur", "lekin", "abhi", "kal", "mera"
+]);
+
+const URDU_WORDS = new Set([
+  "aap", "ap", "aapka", "aapki", "mujhe",
+  "mujhy", "hai", "hain", "nahi", "nahin",
+  "kyun", "kya", "kaise", "shukriya",
+  "meherbani", "janab", "khuda", "acha",
+  "theek", "bohat", "zaroor"
+]);
+
+function countWords(text, dictionary) {
+  const words = text
+    .toLowerCase()
+    .replace(/[^\p{L}\s]/gu, " ")
+    .split(/\s+/)
+    .filter(Boolean);
+
+  return words.filter(word => dictionary.has(word)).length;
 }
 
-export function setLanguage(languageId) {
-  const language = IRA_LANGUAGES.find(
-    item => item.id === languageId
-  );
+function detectRomanLanguage(text) {
+  const hindiScore = countWords(text, HINDI_WORDS);
+  const urduScore = countWords(text, URDU_WORDS);
 
-  if (!language) return false;
+  if (hindiScore === 0 && urduScore === 0) {
+    return "en";
+  }
 
-  currentLanguage = languageId;
-  return true;
-}
+  if (urduScore > hindiScore) return "ur";
+  if (hindiScore > urduScore) return "hinglish";
 
-export function getAvailableLanguages() {
-  return [...IRA_LANGUAGES];
+  return "hinglish";
 }
 
 export function detectLanguage(text) {
-  if (typeof text !== "string") return "en";
+  if (typeof text !== "string" || !text.trim()) {
+    return lastDetectedLanguage;
+  }
 
-  if (/[\u0900-\u097F]/.test(text)) return "hi";
-  if (/[\u0A80-\u0AFF]/.test(text)) return "gu";
-  if (/[\u0600-\u06FF]/.test(text)) return "ur";
+  if (GUJARATI.test(text)) return "gu";
+  if (DEVANAGARI.test(text)) return "hi";
+  if (ARABIC.test(text)) return "ur";
 
-  return "en";
+  return detectRomanLanguage(text);
 }
+
+export function setPreferredLanguage(languageId) {
+  if (
+    languageId !== "auto" &&
+    !LANGUAGES[languageId]
+  ) {
+    return false;
+  }
+
+  preferredLanguage = languageId;
+  return true;
+}
+
+export function setResponseLanguage(languageId) {
+  if (
+    languageId !== "auto" &&
+    !LANGUAGES[languageId]
+  ) {
+    return false;
+  }
+
+  responseLanguage = languageId;
+  return true;
+}
+
+export function getCurrentLanguage() {
+  return preferredLanguage === "auto"
+    ? LANGUAGES[lastDetectedLanguage]
+    : LANGUAGES[preferredLanguage];
+}
+
+export function getAvailableLanguages() {
+  return Object.values(LANGUAGES).map(language => ({
+    ...language
+  }));
+}
+
+export function processUserLanguage(text) {
+  const detected = detectLanguage(text);
+  lastDetectedLanguage = detected;
+
+  const selected =
+    preferredLanguage === "auto"
+      ? detected
+      : preferredLanguage;
+
+  const output =
+    responseLanguage === "auto"
+      ? selected
+      : responseLanguage;
+
+  return {
+    detectedLanguage: detected,
+    preferredLanguage,
+    responseLanguage: output,
+    language: LANGUAGES[output],
+    instruction: LANGUAGE_INSTRUCTIONS[output]
+  };
+}
+
+export function getLanguageInstruction(languageId) {
+  return LANGUAGE_INSTRUCTIONS[languageId] ?? null;
+}
+
+export function resetLanguageSettings() {
+  preferredLanguage = "auto";
+  responseLanguage = "auto";
+  lastDetectedLanguage = "en";
+  }
+  
