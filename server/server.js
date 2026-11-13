@@ -1,3 +1,4 @@
+
 import http from "node:http";
 
 const PORT = Number(process.env.PORT || 3000);
@@ -13,11 +14,11 @@ const server = http.createServer(async (req, res) => {
   res.setHeader("Access-Control-Allow-Origin", ALLOWED_ORIGIN);
   res.setHeader(
     "Access-Control-Allow-Methods",
-    "POST, OPTIONS"
+    "GET, POST, OPTIONS"
   );
   res.setHeader(
     "Access-Control-Allow-Headers",
-    "Content-Type"
+    "Content-Type, Authorization"
   );
 
   if (req.method === "OPTIONS") {
@@ -25,7 +26,13 @@ const server = http.createServer(async (req, res) => {
     return res.end();
   }
 
-  if (req.url === "/health" && req.method === "GET") {
+  const pathname = new URL(
+    req.url,
+    `http://${req.headers.host || "localhost"}`
+  ).pathname.replace(/\/+$/, "") || "/";
+
+  // ROOT STATUS
+  if (req.method === "GET" && pathname === "/") {
     res.writeHead(200, {
       "Content-Type": "application/json"
     });
@@ -33,11 +40,27 @@ const server = http.createServer(async (req, res) => {
     return res.end(JSON.stringify({
       status: "online",
       service: "Ira AI Backend",
-      modelConfigured: Boolean(AI_MODEL)
+      health: "/health"
     }));
   }
 
-  if (req.url !== "/api/chat" || req.method !== "POST") {
+  // HEALTH CHECK
+  if (req.method === "GET" && pathname === "/health") {
+    res.writeHead(200, {
+      "Content-Type": "application/json"
+    });
+
+    return res.end(JSON.stringify({
+      status: "online",
+      service: "Ira AI Backend",
+      modelConfigured: Boolean(
+        AI_API_URL && AI_API_KEY && AI_MODEL
+      )
+    }));
+  }
+
+  // CHAT ENDPOINT
+  if (req.method !== "POST" || pathname !== "/api/chat") {
     res.writeHead(404, {
       "Content-Type": "application/json"
     });
@@ -49,7 +72,13 @@ const server = http.createServer(async (req, res) => {
 
   try {
     if (!AI_API_URL || !AI_API_KEY || !AI_MODEL) {
-      throw new Error("AI provider configuration is missing.");
+      res.writeHead(503, {
+        "Content-Type": "application/json"
+      });
+
+      return res.end(JSON.stringify({
+        error: "AI provider is not configured yet."
+      }));
     }
 
     const chunks = [];
@@ -116,4 +145,4 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`Ira backend running on port ${PORT}`);
 });
-                    
+                                 
