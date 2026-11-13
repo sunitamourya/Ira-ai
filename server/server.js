@@ -1,25 +1,33 @@
 
 import http from "node:http";
 
-const PORT = Number(process.env.PORT || 3000);
+import {
+  generateAIResponse,
+  getConfiguredProviders
+} from "./provider-manager.js";
 
-const AI_API_URL = process.env.AI_API_URL;
-const AI_API_KEY = process.env.AI_API_KEY;
-const AI_MODEL = process.env.AI_MODEL;
+const PORT = Number(process.env.PORT || 3000);
 
 const ALLOWED_ORIGIN =
   process.env.ALLOWED_ORIGIN || "*";
 
 const server = http.createServer(async (req, res) => {
-  res.setHeader("Access-Control-Allow-Origin", ALLOWED_ORIGIN);
+  res.setHeader(
+    "Access-Control-Allow-Origin",
+    ALLOWED_ORIGIN
+  );
+
   res.setHeader(
     "Access-Control-Allow-Methods",
     "GET, POST, OPTIONS"
   );
+
   res.setHeader(
     "Access-Control-Allow-Headers",
     "Content-Type, Authorization"
   );
+
+  res.setHeader("Content-Type", "application/json");
 
   if (req.method === "OPTIONS") {
     res.writeHead(204);
@@ -31,11 +39,9 @@ const server = http.createServer(async (req, res) => {
     `http://${req.headers.host || "localhost"}`
   ).pathname.replace(/\/+$/, "") || "/";
 
-  // ROOT STATUS
+  // HOME
   if (req.method === "GET" && pathname === "/") {
-    res.writeHead(200, {
-      "Content-Type": "application/json"
-    });
+    res.writeHead(200);
 
     return res.end(JSON.stringify({
       status: "online",
@@ -46,24 +52,21 @@ const server = http.createServer(async (req, res) => {
 
   // HEALTH CHECK
   if (req.method === "GET" && pathname === "/health") {
-    res.writeHead(200, {
-      "Content-Type": "application/json"
-    });
+    const providers = getConfiguredProviders();
+
+    res.writeHead(200);
 
     return res.end(JSON.stringify({
       status: "online",
       service: "Ira AI Backend",
-      modelConfigured: Boolean(
-        AI_API_URL && AI_API_KEY && AI_MODEL
-      )
+      modelConfigured: providers.length > 0,
+      providers
     }));
   }
 
-  // CHAT ENDPOINT
+  // CHAT API
   if (req.method !== "POST" || pathname !== "/api/chat") {
-    res.writeHead(404, {
-      "Content-Type": "application/json"
-    });
+    res.writeHead(404);
 
     return res.end(JSON.stringify({
       error: "Endpoint not found."
@@ -71,19 +74,20 @@ const server = http.createServer(async (req, res) => {
   }
 
   try {
-    if (!AI_API_URL || !AI_API_KEY || !AI_MODEL) {
-      res.writeHead(503, {
-        "Content-Type": "application/json"
-      });
-
-      return res.end(JSON.stringify({
-        error: "AI provider is not configured yet."
-      }));
-    }
-
     const chunks = [];
+    let totalSize = 0;
 
     for await (const chunk of req) {
+      totalSize += chunk.length;
+
+      if (totalSize > 1024 * 1024) {
+        res.writeHead(413);
+
+        return res.end(JSON.stringify({
+          error: "Request too large."
+        }));
+      }
+
       chunks.push(chunk);
     }
 
@@ -91,8 +95,15 @@ const server = http.createServer(async (req, res) => {
       Buffer.concat(chunks).toString("utf8")
     );
 
-    if (!Array.isArray(body.messages)) {
-      throw new Error("Invalid messages format.");
+    if (
+      !Array.isArray(body.messages) ||
+      body.messages.length === 0
+    ) {
+      res.writeHead(400);
+
+      return res.end(JSON.stringify({
+        error: "Valid messages are required."
+      }));
     }
 
     const messages = body.messages.map(message => {
@@ -100,7 +111,7 @@ const server = http.createServer(async (req, res) => {
         !["system", "user", "assistant"].includes(message.role) ||
         typeof message.content !== "string"
       ) {
-        throw new Error("Invalid message entry.");
+        throw new Error("Invalid message format.");
       }
 
       return {
@@ -109,32 +120,21 @@ const server = http.createServer(async (req, res) => {
       };
     });
 
-    const upstream = await fetch(AI_API_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${AI_API_KEY}`
-      },
-      body: JSON.stringify({
-        model: AI_MODEL,
-        messages
-      })
-    });
+    const result = await generateAIResponse(messages);
 
-    const result = await upstream.text();
+    res.writeHead(200);
 
-    res.writeHead(upstream.status, {
-      "Content-Type": "application/json"
-    });
-
-    return res.end(result);
+    return res.end(JSON.stringify(result.data));
 
   } catch (error) {
-    console.error("Ira backend error:", error.message);
+    console.error("Ira AI error:", error.message);
 
-    res.writeHead(500, {
-      "Content-Type": "application/json"
-    });
+    const status =
+      error.message.includes("No AI providers configured")
+        ? 503
+        : 502;
+
+    res.writeHead(status);
 
     return res.end(JSON.stringify({
       error: "Ira could not complete the AI request."
