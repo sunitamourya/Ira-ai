@@ -11,6 +11,8 @@ const PORT = Number(process.env.PORT || 3000);
 const ALLOWED_ORIGIN =
   process.env.ALLOWED_ORIGIN || "*";
 
+const MAX_REQUEST_SIZE = 1024 * 1024;
+
 const server = http.createServer(async (req, res) => {
   res.setHeader(
     "Access-Control-Allow-Origin",
@@ -34,10 +36,19 @@ const server = http.createServer(async (req, res) => {
     return res.end();
   }
 
-  const pathname = new URL(
-    req.url,
-    `http://${req.headers.host || "localhost"}`
-  ).pathname.replace(/\/+$/, "") || "/";
+  let pathname;
+
+  try {
+    pathname = new URL(
+      req.url,
+      `http://${req.headers.host || "localhost"}`
+    ).pathname.replace(/\/+$/, "") || "/";
+  } catch {
+    res.writeHead(400);
+    return res.end(JSON.stringify({
+      error: "Invalid request URL."
+    }));
+  }
 
   // HOME
   if (req.method === "GET" && pathname === "/") {
@@ -54,12 +65,17 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "GET" && pathname === "/health") {
     const providers = getConfiguredProviders();
 
+    const configuredCount = providers.filter(
+      provider => provider.configured
+    ).length;
+
     res.writeHead(200);
 
     return res.end(JSON.stringify({
       status: "online",
       service: "Ira AI Backend",
-      modelConfigured: providers.length > 0,
+      modelConfigured: configuredCount > 0,
+      configuredProviderCount: configuredCount,
       providers
     }));
   }
@@ -80,7 +96,7 @@ const server = http.createServer(async (req, res) => {
     for await (const chunk of req) {
       totalSize += chunk.length;
 
-      if (totalSize > 1024 * 1024) {
+      if (totalSize > MAX_REQUEST_SIZE) {
         res.writeHead(413);
 
         return res.end(JSON.stringify({
@@ -91,9 +107,19 @@ const server = http.createServer(async (req, res) => {
       chunks.push(chunk);
     }
 
-    const body = JSON.parse(
-      Buffer.concat(chunks).toString("utf8")
-    );
+    const rawBody = Buffer.concat(chunks).toString("utf8");
+
+    let body;
+
+    try {
+      body = JSON.parse(rawBody);
+    } catch {
+      res.writeHead(400);
+
+      return res.end(JSON.stringify({
+        error: "Invalid JSON request."
+      }));
+    }
 
     if (
       !Array.isArray(body.messages) ||
@@ -108,6 +134,7 @@ const server = http.createServer(async (req, res) => {
 
     const messages = body.messages.map(message => {
       if (
+        !message ||
         !["system", "user", "assistant"].includes(message.role) ||
         typeof message.content !== "string"
       ) {
@@ -127,7 +154,7 @@ const server = http.createServer(async (req, res) => {
     return res.end(JSON.stringify(result.data));
 
   } catch (error) {
-    console.error("Ira AI error:", error.message);
+    console.error("Ira AI request failed:", error.message);
 
     const status =
       error.message.includes("No AI providers configured")
@@ -145,4 +172,4 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`Ira backend running on port ${PORT}`);
 });
-                                 
+    
