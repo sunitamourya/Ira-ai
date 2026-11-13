@@ -1,4 +1,3 @@
-
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
@@ -9,14 +8,6 @@
         android:label="Ira AI"
         android:theme="@android:style/Theme.Material.Light.NoActionBar"
         android:usesCleartextTraffic="false">
-
-        <uses-native-library
-            android:name="libvndksupport.so"
-            android:required="false" />
-
-        <uses-native-library
-            android:name="libOpenCL.so"
-            android:required="false" />
 
         <activity
             android:name=".MainActivity"
