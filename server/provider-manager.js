@@ -1,30 +1,46 @@
+
 const PROVIDER_SLOTS = [1, 2, 3, 4];
 
 function readProviders() {
-  return PROVIDER_SLOTS
-    .map(number => ({
-      name: process.env[`AI_PROVIDER_${number}_NAME`],
-      url: process.env[`AI_PROVIDER_${number}_URL`],
-      key: process.env[`AI_PROVIDER_${number}_KEY`],
-      model: process.env[`AI_PROVIDER_${number}_MODEL`]
-    }))
-    .filter(provider =>
-      provider.url &&
-      provider.key &&
-      provider.model
-    );
+  return PROVIDER_SLOTS.map(number => {
+    const prefix = `AI_PROVIDER_${number}_`;
+
+    return {
+      slot: number,
+      name: process.env[prefix + "NAME"],
+      url: process.env[prefix + "URL"],
+      key: process.env[prefix + "KEY"],
+      model: process.env[prefix + "MODEL"]
+    };
+  });
 }
 
+function getReadyProviders() {
+  return readProviders().filter(provider =>
+    provider.url?.trim() &&
+    provider.key?.trim() &&
+    provider.model?.trim()
+  );
+}
+
+// Safe diagnostic: never returns API keys or URLs.
 export function getConfiguredProviders() {
   return readProviders().map(provider => ({
-    name: provider.name || "AI Provider",
-    model: provider.model,
-    configured: true
+    slot: provider.slot,
+    namePresent: Boolean(provider.name?.trim()),
+    urlPresent: Boolean(provider.url?.trim()),
+    keyPresent: Boolean(provider.key?.trim()),
+    modelPresent: Boolean(provider.model?.trim()),
+    configured: Boolean(
+      provider.url?.trim() &&
+      provider.key?.trim() &&
+      provider.model?.trim()
+    )
   }));
 }
 
 export async function generateAIResponse(messages) {
-  const providers = readProviders();
+  const providers = getReadyProviders();
 
   if (providers.length === 0) {
     throw new Error("No AI providers configured.");
@@ -64,7 +80,7 @@ export async function generateAIResponse(messages) {
 
       if (
         !data ||
-        !data.choices?.[0]?.message?.content
+        typeof data.choices?.[0]?.message?.content !== "string"
       ) {
         throw new Error("Invalid provider response.");
       }
@@ -78,7 +94,7 @@ export async function generateAIResponse(messages) {
       errors.push(error.message);
 
       console.warn(
-        `AI provider failed: ${provider.name || provider.model}`
+        `AI provider failed in slot ${provider.slot}.`
       );
 
     } finally {
@@ -90,4 +106,4 @@ export async function generateAIResponse(messages) {
     "All configured AI providers failed: " +
     errors.join("; ")
   );
-}
+          }
