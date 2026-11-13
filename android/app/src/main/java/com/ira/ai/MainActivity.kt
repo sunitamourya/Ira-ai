@@ -6,6 +6,7 @@ import android.os.Bundle
 import android.content.Intent
 import android.view.ViewGroup
 import android.widget.*
+import android.net.Uri
 import com.google.ai.edge.litertlm.Backend
 import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
@@ -38,18 +39,21 @@ class MainActivity : Activity() {
         })
 
         status = TextView(this).apply {
-            text = "Choose a local AI model."
+            text = "Choose an AI model or avatar."
         }
         layout.addView(status)
 
         layout.addView(Button(this).apply {
-            text = "Choose Local Model"
+            text = "Choose Local AI Model"
             setOnClickListener {
-                val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-                    type = "*/*"
-                    addCategory(Intent.CATEGORY_OPENABLE)
-                }
-                startActivityForResult(intent, 1001)
+                chooseFile(1001)
+            }
+        })
+
+        layout.addView(Button(this).apply {
+            text = "Choose VRM Avatar"
+            setOnClickListener {
+                chooseFile(1002)
             }
         })
 
@@ -82,6 +86,14 @@ class MainActivity : Activity() {
         setContentView(layout)
     }
 
+    private fun chooseFile(requestCode: Int) {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            type = "*/*"
+            addCategory(Intent.CATEGORY_OPENABLE)
+        }
+        startActivityForResult(intent, requestCode)
+    }
+
     @Deprecated("Legacy file picker callback")
     override fun onActivityResult(
         requestCode: Int,
@@ -90,9 +102,33 @@ class MainActivity : Activity() {
     ) {
         super.onActivityResult(requestCode, resultCode, data)
 
-        if (requestCode != 1001 || resultCode != RESULT_OK) return
+        if (resultCode != RESULT_OK) return
 
         val uri = data?.data ?: return
+
+        when (requestCode) {
+            1001 -> {
+                if (!uri.toString().substringBefore("?")
+                        .lowercase().endsWith(".litertlm")) {
+                    status.text = "Please select a .litertlm AI model."
+                    return
+                }
+                loadModel(uri)
+            }
+
+            1002 -> {
+                if (!uri.toString().substringBefore("?")
+                        .lowercase().endsWith(".vrm")) {
+                    status.text = "Please select a .vrm avatar file."
+                    return
+                }
+                status.text = "VRM selected. Avatar renderer integration is still needed."
+                output.text = "Selected avatar: ${uri.lastPathSegment ?: "VRM file"}"
+            }
+        }
+    }
+
+    private fun loadModel(uri: Uri) {
         status.text = "Loading model..."
 
         executor.execute {
@@ -120,11 +156,17 @@ class MainActivity : Activity() {
 
                 newEngine.initialize()
 
-                val newConversation =
-                    newEngine.createConversation()
+                val newConversation = newEngine.createConversation()
 
-                engine = newEngine
+                val oldConversation = conversation
+                val oldEngine = engine
+
                 conversation = newConversation
+                engine = newEngine
+                newEngine = null
+
+                oldConversation?.close()
+                oldEngine?.close()
 
                 runOnUiThread {
                     status.text = "Local AI ready!"
@@ -135,8 +177,7 @@ class MainActivity : Activity() {
                 newEngine?.close()
 
                 runOnUiThread {
-                    status.text =
-                        "Model loading failed: ${error.message}"
+                    status.text = "Model loading failed: ${error.message ?: "Unknown error"}"
                 }
             }
         }
@@ -162,7 +203,7 @@ class MainActivity : Activity() {
 
             } catch (error: Exception) {
                 runOnUiThread {
-                    status.text = "AI error: ${error.message}"
+                    status.text = "AI error: ${error.message ?: "Unknown error"}"
                     sendButton.isEnabled = true
                 }
             }
